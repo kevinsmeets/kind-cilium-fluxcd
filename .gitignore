@@ -1,0 +1,7 @@
+# Extra CA certificates (staged temporarily into build contexts during image builds)
+*.crt
+*.pem
+
+# Docker mirror cache
+docker_mirror_cache/
+docker_mirror_certs/
