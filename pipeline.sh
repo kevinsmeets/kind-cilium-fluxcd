@@ -2251,6 +2251,8 @@ if [[ $MONGODB == true ]]; then
         --namespace mongodb \
         --version "${MONGODB_HELM_CHART_VERSION}" \
         --values - <<EOF
+image:
+  digest: "${BITNAMI_MONGODB_DIGEST}"
 architecture: standalone
 auth:
   enabled: true
@@ -2599,7 +2601,7 @@ spec:
     spec:
       containers:
       - name: mongodb-demo
-        image: bitnami/mongodb:${BITNAMI_MONGODB_VERSION}
+        image: mongo:${MONGODB_VERSION}
         command: ["/bin/bash", "/scripts/demo.sh"]
         env:
         - name: MONGO_HOST
