@@ -3,6 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Ensure ca-certificates is installed and up to date
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # Optional extra CA certificate (e.g. corporate MITM proxy CA). The build

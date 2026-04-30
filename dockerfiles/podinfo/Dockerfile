@@ -9,3 +9,6 @@ RUN if [ -s /tmp/extra-ca.crt ]; then \
         update-ca-certificates; \
     fi && \
     rm -f /tmp/extra-ca.crt
+
+# Restore the non-root user used by the upstream image.
+USER app
