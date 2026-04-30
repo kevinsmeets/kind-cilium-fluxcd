@@ -61,6 +61,7 @@ jobs:
           source versions.env
           FLUX_VERSION=${FLUX_VERSION#v}  # remove leading 'v' if present (script expects 2.5.1)
           curl -fsSL https://fluxcd.io/install.sh | bash -s -- "$FLUX_VERSION"
+          echo "/usr/local/bin" >> $GITHUB_PATH
 
       # ── Run pipeline ───────────────────────────────────────────────
       - name: Run pipeline.sh ${{ matrix.flags }}
