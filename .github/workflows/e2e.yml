@@ -57,8 +57,9 @@ jobs:
           curl -fsSL "https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-amd64.tar.gz" \
             | sudo tar xz -C /usr/local/bin cilium
 
-          # flux CLI
-          curl -fsSL https://fluxcd.io/install.sh | bash
+          # flux CLI (must match FLUX_VERSION in versions.env)
+          source ./versions.env
+          curl -fsSL https://fluxcd.io/install.sh | bash -s -- "$FLUX_VERSION"
 
       # ── Run pipeline ───────────────────────────────────────────────
       - name: Run pipeline.sh ${{ matrix.flags }}
@@ -132,11 +133,9 @@ jobs:
           # Wait for at least one write cycle (pods write every 10s)
           sleep 15
 
-          PGPASSWORD=$(kubectl -n postgres get secret postgres-app -o jsonpath='{.data.password}' | base64 --decode)
-          export PGPASSWORD
-
           # Verify data was written by the example pods
           ROW_COUNT=$(kubectl -n postgres exec postgres-1 -- \
+            PGPASSWORD=$(kubectl -n postgres get secret postgres-app -o jsonpath='{.data.password}' | base64 --decode) \
             psql -h localhost -U app -d app -tAc \
             "SELECT COUNT(*) FROM demo_events;")
 
@@ -147,6 +146,7 @@ jobs:
           fi
 
           POD_COUNT=$(kubectl -n postgres exec postgres-1 -- \
+            PGPASSWORD=$(kubectl -n postgres get secret postgres-app -o jsonpath='{.data.password}' | base64 --decode) \
             psql -h localhost -U app -d app -tAc \
             "SELECT COUNT(DISTINCT pod_name) FROM demo_events;")
 
