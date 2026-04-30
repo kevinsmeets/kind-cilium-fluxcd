@@ -1,10 +1,9 @@
 import os
-import json
 import boto3
 import redis
 import psycopg2
 from pymongo import MongoClient
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from dotenv import load_dotenv
 import requests
 
