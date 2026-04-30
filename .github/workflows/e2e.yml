@@ -60,7 +60,6 @@ jobs:
           # flux CLI (must match FLUX_VERSION in versions.env)
           source versions.env
           FLUX_VERSION=${FLUX_VERSION#v}  # remove leading 'v' if present (script expects 2.5.1)
-          
 
           curl -sL "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz" \
             -o flux.tar.gz
