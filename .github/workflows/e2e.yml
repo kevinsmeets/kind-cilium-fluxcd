@@ -132,6 +132,9 @@ jobs:
           # Wait for at least one write cycle (pods write every 10s)
           sleep 15
 
+          PGPASSWORD=$(kubectl -n postgres get secret postgres-app -o jsonpath='{.data.password}' | base64 --decode)
+          export PGPASSWORD
+
           # Verify data was written by the example pods
           ROW_COUNT=$(kubectl -n postgres exec postgres-1 -- \
             psql -h localhost -U app -d app -tAc \
