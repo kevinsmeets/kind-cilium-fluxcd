@@ -1,0 +1,176 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline
+            flags: ""
+            # No extra flags — just KinD + Cilium
+          - name: flux
+            flags: "-f"
+          - name: podinfo
+            flags: "-f -p"
+          - name: cnpg-example
+            flags: "-g -y"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Prerequisites ──────────────────────────────────────────────
+      - name: Raise inotify limits
+        run: |
+          sudo sysctl -w fs.inotify.max_user_watches=1048576
+          sudo sysctl -w fs.inotify.max_user_instances=512
+
+      - name: Install CLI tools
+        run: |
+          set -e
+          # kind
+          KIND_VERSION="v0.27.0"
+          curl -fsSLo ./kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+
+          # helm
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+          # cilium CLI
+          CILIUM_CLI_VERSION="v0.18.3"
+          curl -fsSL "https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-amd64.tar.gz" \
+            | sudo tar xz -C /usr/local/bin cilium
+
+          # flux CLI
+          curl -fsSL https://fluxcd.io/install.sh | bash
+
+      # ── Run pipeline ───────────────────────────────────────────────
+      - name: Run pipeline.sh ${{ matrix.flags }}
+        run: |
+          ./pipeline.sh -i ${{ matrix.flags }}
+
+      # ── Baseline assertions (always run) ────────────────────────────
+      - name: Verify nodes are Ready
+        if: always()
+        run: |
+          kubectl wait --for=condition=Ready nodes --all --timeout=2m
+          kubectl get nodes -o wide
+
+      - name: Verify kube-system pods
+        if: always()
+        run: |
+          kubectl -n kube-system wait --for=condition=Ready pod --all --timeout=5m
+          kubectl -n kube-system get pods
+
+      - name: Cilium status
+        if: always()
+        run: cilium status --wait --wait-duration=5m
+
+      # ── Flux assertions ─────────────────────────────────────────────
+      - name: Verify Flux components
+        if: always() && contains(matrix.flags, '-f')
+        run: |
+          flux check
+          kubectl -n cluster-config get pods
+          kubectl -n cluster-config wait --for=condition=Ready pod --all --timeout=3m
+
+      # ── Podinfo assertions ──────────────────────────────────────────
+      - name: Verify podinfo deployment
+        if: always() && contains(matrix.flags, '-p')
+        run: |
+          # Wait for the Flux kustomization to reconcile
+          kubectl -n cluster-config wait \
+            --for='jsonpath={.status.conditions[?(@.type=="Ready")].status}=True' \
+            kustomization/podinfo --timeout=5m
+
+          # Wait for pods
+          kubectl -n podinfo wait --for=condition=Ready pod -l app=podinfo --timeout=3m
+          kubectl -n podinfo get pods
+
+          # Port-forward and healthcheck
+          kubectl -n podinfo port-forward svc/podinfo 9898:9898 &
+          PF_PID=$!
+          sleep 3
+
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:9898/healthz)
+          kill $PF_PID || true
+          if [[ "$HTTP_CODE" != "200" ]]; then
+            echo "ERROR: podinfo /healthz returned HTTP $HTTP_CODE (expected 200)"
+            exit 1
+          fi
+          echo "podinfo /healthz returned HTTP 200"
+
+      # ── CNPG assertions ─────────────────────────────────────────────
+      - name: Verify CloudNativePG operator
+        if: always() && contains(matrix.flags, '-g')
+        run: |
+          kubectl -n cnpg-system rollout status --watch --timeout=5m deployment/cnpg-cloudnative-pg
+          kubectl -n postgres wait --for=condition=Ready cluster/postgres --timeout=10m
+          kubectl -n postgres get pods
+
+      - name: Verify CNPG example app
+        if: always() && contains(matrix.flags, '-y')
+        run: |
+          kubectl -n cnpg-example rollout status --watch --timeout=5m deployment/cnpg-demo
+
+          # Wait for at least one write cycle (pods write every 10s)
+          sleep 15
+
+          # Verify data was written by the example pods
+          ROW_COUNT=$(kubectl -n postgres exec postgres-1 -- \
+            psql -h localhost -U app -d app -tAc \
+            "SELECT COUNT(*) FROM demo_events;")
+
+          echo "demo_events row count: $ROW_COUNT"
+          if [[ "$ROW_COUNT" -lt 1 ]]; then
+            echo "ERROR: Expected at least 1 row in demo_events, got $ROW_COUNT"
+            exit 1
+          fi
+
+          POD_COUNT=$(kubectl -n postgres exec postgres-1 -- \
+            psql -h localhost -U app -d app -tAc \
+            "SELECT COUNT(DISTINCT pod_name) FROM demo_events;")
+
+          echo "Distinct pods writing: $POD_COUNT"
+
+      # ── Diagnostics on failure ──────────────────────────────────────
+      - name: Collect diagnostics
+        if: failure()
+        run: |
+          mkdir -p /tmp/diagnostics
+
+          echo "=== Cluster info ==="
+          kubectl cluster-info dump --output-directory=/tmp/diagnostics/cluster-info || true
+
+          echo "=== All pods (all namespaces) ==="
+          kubectl get pods -A -o wide > /tmp/diagnostics/all-pods.txt 2>&1 || true
+
+          echo "=== Events ==="
+          kubectl get events -A --sort-by='.lastTimestamp' > /tmp/diagnostics/events.txt 2>&1 || true
+
+          echo "=== Cilium sysdump ==="
+          cilium sysdump --output-filename /tmp/diagnostics/cilium-sysdump || true
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ matrix.name }}
+          path: /tmp/diagnostics/
+          retention-days: 7
