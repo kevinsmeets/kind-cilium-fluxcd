@@ -22,11 +22,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        #   - name: baseline
-        #     flags: ""
-        #     # No extra flags — just KinD + Cilium
-          - name: flux
-            flags: "-f"
+          - name: baseline
+            flags: ""
+            # No extra flags — just KinD + Cilium
+        #   - name: flux
+        #     flags: "-f"
         #   - name: podinfo
         #     flags: "-f -p"
         #   - name: cnpg-example
