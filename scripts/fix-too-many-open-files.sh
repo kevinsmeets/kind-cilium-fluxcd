@@ -28,13 +28,13 @@ sudo sed -r -i -e "s/#DefaultLimitNOFILE=[0-9]+:[0-9]+/DefaultLimitNOFILE=524288
 
 present_in_user_config=$(grep DefaultLimitNOFILE=524288:524288 /etc/systemd/user.conf)
 if [ -z "$present_in_user_config" ]; then
-	echo "DefaultLimitNOFILE=524288:524288" | sudo tee --append /etc/systemd/user.conf
+    echo "DefaultLimitNOFILE=524288:524288" | sudo tee --append /etc/systemd/user.conf
 fi
 
 echo "Changing inotify configuration..."
 present_in_sysctl=$(grep fs.inotify.max_user_instances=256 /etc/sysctl.conf)
 if [ -z "$present_in_sysctl" ]; then
-	echo "fs.inotify.max_user_instances=256" | sudo tee --append /etc/sysctl.conf
+    echo "fs.inotify.max_user_instances=256" | sudo tee --append /etc/sysctl.conf
 fi
 
 echo "Reloading systemd configuration files..."

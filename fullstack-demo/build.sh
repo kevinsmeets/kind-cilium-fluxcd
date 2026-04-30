@@ -16,7 +16,7 @@ if [[ -n "${EXTRA_CA_CERT:-}" ]]; then
     fi
     cp -f "$EXTRA_CA_CERT" "$STAGED_CERT"
 else
-    : > "$STAGED_CERT"
+    : >"$STAGED_CERT"
 fi
 
 # Build and push the image to the local registry
@@ -31,9 +31,6 @@ rm -f "$STAGED_CERT"
 PG_NAMESPACE="postgres"
 PG_SECRET="postgres-app"
 PG_PASSWORD=$(kubectl get secret "$PG_SECRET" -n "$PG_NAMESPACE" -o jsonpath='{.data.password}' | base64 -d)
-
-
-
 
 # Patch only POSTGRES_PASSWORD to the generated password
 
@@ -53,7 +50,7 @@ awk -v pw="$PG_PASSWORD" '
     next;
   }
   {print}
-' "$SCRIPT_DIR/k8s.yaml" > "$TMP_K8S_YAML"
+' "$SCRIPT_DIR/k8s.yaml" >"$TMP_K8S_YAML"
 
 echo "Deploying fullstack-demo with current PostgreSQL app user password..."
 kubectl apply -f "$TMP_K8S_YAML"

@@ -43,7 +43,7 @@ _stage_extra_ca() {
     if [[ -n "${EXTRA_CA_CERT:-}" && -f "$EXTRA_CA_CERT" ]]; then
         cp "$EXTRA_CA_CERT" "$dest"
     else
-        : > "$dest"
+        : >"$dest"
     fi
 }
 
@@ -147,13 +147,20 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -h|--help) usage; exit 0;;
-            -n|--node) BUILD_NODE=true;;
-            -f|--flux) BUILD_FLUX=true;;
-            -p|--podinfo) BUILD_PODINFO=true;;
-            -x|--proxy) BUILD_PROXY=true;;
-            -a|--all) BUILD_ALL=true;;
-            *) echo "Unknown option: $1"; usage; exit 1;;
+            -h | --help)
+                usage
+                exit 0
+                ;;
+            -n | --node) BUILD_NODE=true ;;
+            -f | --flux) BUILD_FLUX=true ;;
+            -p | --podinfo) BUILD_PODINFO=true ;;
+            -x | --proxy) BUILD_PROXY=true ;;
+            -a | --all) BUILD_ALL=true ;;
+            *)
+                echo "Unknown option: $1"
+                usage
+                exit 1
+                ;;
         esac
         shift
     done

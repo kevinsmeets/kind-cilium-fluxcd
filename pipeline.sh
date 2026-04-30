@@ -256,7 +256,7 @@ if [[ $INSTALL_CILIUM == true ]]; then
     echo "----------"
     echo "Install Cilium helm chart..."
     helm upgrade --install --namespace kube-system --version $CILIUM_HELM_CHART_VERSION --repo https://helm.cilium.io cilium cilium \
-    --values - <<EOF
+        --values - <<EOF
 l7Proxy: true
 endpointRoutes:
   enabled: true
@@ -440,17 +440,16 @@ metadata:
   namespace: kube-system
 EOF
 
-
     kubectl -n kube-system rollout restart deployment coredns
 
     DEPLOY_CILIUM_LB_CONFIG="TRUE"
     if [ "$DEPLOY_CILIUM_LB_CONFIG" == "TRUE" ]; then
         # 1) Get the IPv4 subnet of the Docker 'kind' network (e.g. 172.18.0.0/16)
         DOCKER_NETWORK_SUBNET="$(
-        docker network inspect kind \
-            --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' \
-            | grep -E '^[0-9]+\.' \
-            | head -n1
+            docker network inspect kind \
+                --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' \
+                | grep -E '^[0-9]+\.' \
+                | head -n1
         )"
         if [[ -z "${DOCKER_NETWORK_SUBNET}" ]]; then
             echo "ERROR: Could not determine an IPv4 subnet for docker network 'kind'." >&2
@@ -494,13 +493,13 @@ fi
 
 echo "----------"
 if [[ $FLUX == true ]]; then
-      echo "Install FluxCD..."
-      kubectl create namespace cluster-config --dry-run=client -o yaml | kubectl apply -f -
-      flux install --registry ${REGISTRY} --namespace cluster-config --components=source-controller,kustomize-controller,helm-controller,notification-controller
-      kubectl -n cluster-config rollout status --watch --timeout=5m deployment/source-controller
-      kubectl -n cluster-config rollout status --watch --timeout=5m deployment/kustomize-controller
-      kubectl -n cluster-config rollout status --watch --timeout=5m deployment/helm-controller
-      kubectl -n cluster-config rollout status --watch --timeout=5m deployment/notification-controller
+    echo "Install FluxCD..."
+    kubectl create namespace cluster-config --dry-run=client -o yaml | kubectl apply -f -
+    flux install --registry ${REGISTRY} --namespace cluster-config --components=source-controller,kustomize-controller,helm-controller,notification-controller
+    kubectl -n cluster-config rollout status --watch --timeout=5m deployment/source-controller
+    kubectl -n cluster-config rollout status --watch --timeout=5m deployment/kustomize-controller
+    kubectl -n cluster-config rollout status --watch --timeout=5m deployment/helm-controller
+    kubectl -n cluster-config rollout status --watch --timeout=5m deployment/notification-controller
 fi
 
 if [[ $METRICS_SERVER == true ]]; then
@@ -519,7 +518,8 @@ if [[ $METRICS_SERVER == true ]]; then
         --prune=true \
         --interval=5m
 
-    kubectl -n cluster-config patch kustomization metrics-server --type='merge' --patch "$(cat <<'PATCH'
+    kubectl -n cluster-config patch kustomization metrics-server --type='merge' --patch "$(
+        cat <<'PATCH'
 spec:
   patches:
     - target:
@@ -531,7 +531,7 @@ spec:
           path: /spec/template/spec/containers/0/args/-
           value: --kubelet-insecure-tls
 PATCH
-)"
+    )"
 
     flux reconcile kustomization metrics-server -n cluster-config
 
@@ -625,7 +625,6 @@ spec:
               number: 80
 EOF
 fi
-
 
 if [[ $RELOADER == true ]]; then
     helm repo add stakater https://stakater.github.io/stakater-charts
@@ -1199,7 +1198,7 @@ EOF
         # Wait until 'bao status' reports a usable state (uninitialized).
         for i in $(seq 1 60); do
             if kubectl -n openbao exec openbao-0 -- bao status -format=json >/tmp/bao-status.json 2>/dev/null \
-               || [[ $? -eq 2 ]]; then
+                || [[ $? -eq 2 ]]; then
                 break
             fi
             sleep 2
@@ -1319,7 +1318,7 @@ EOF
     # a direct Prometheus datasource reference so Grafana sidecar can use it.
     echo "Patching OpenBao Grafana dashboard datasource..."
     kubectl -n openbao get configmap openbao-dashboard -o json \
-      | python3 -c '
+        | python3 -c '
 import sys, json, re
 
 cm = json.load(sys.stdin)
@@ -1656,7 +1655,7 @@ EOF
     if kubectl get configmap -n monitoring cnpg-grafana-dashboard &>/dev/null; then
         echo "Patching CNPG Grafana dashboard datasource..."
         kubectl -n monitoring get configmap cnpg-grafana-dashboard -o json \
-          | python3 -c '
+            | python3 -c '
 import sys, json
 
 cm = json.load(sys.stdin)

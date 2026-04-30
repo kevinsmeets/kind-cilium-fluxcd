@@ -59,13 +59,13 @@ start_proxy() {
             -v "${HOME}/docker_mirror_certs:/ca" \
             -e REGISTRIES="registry.k8s.io k8s.gcr.io gcr.io ghcr.io quay.io docker.elastic.co" \
             "${REGISTRY}/rpardini/docker-registry-proxy:${DOCKER_REGISTRY_PROXY_VERSION}" \
-        || {
-            echo "WARNING: Could not start Docker registry proxy."
-            echo "         Make sure the proxy image is in the local registry."
-            echo "         Run: ./scripts/build-images.sh --proxy"
-            echo "         Continuing without proxy..."
-            ENABLE_PROXY="false"
-        }
+            || {
+                echo "WARNING: Could not start Docker registry proxy."
+                echo "         Make sure the proxy image is in the local registry."
+                echo "         Run: ./scripts/build-images.sh --proxy"
+                echo "         Continuing without proxy..."
+                ENABLE_PROXY="false"
+            }
     else
         echo "Docker registry proxy is already running."
     fi
@@ -85,7 +85,8 @@ couple_docker_registry_proxy() {
             curl $SETUP_URL \
             | sed s/docker\.service/containerd\.service/g \
             | sed '/Environment/ s/\$/ \"NO_PROXY=127.0.0.0\/8,10.0.0.0\/8,172.16.0.0\/12,192.168.0.0\/16\"/' \
-            | bash" & pids="$pids $!"
+            | bash" &
+        pids="$pids $!"
     done
     wait $pids
 }
