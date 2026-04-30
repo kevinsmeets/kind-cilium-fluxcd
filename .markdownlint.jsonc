@@ -1,0 +1,7 @@
+{
+  // Allow long lines — READMEs contain URLs, tables, and CLI examples
+  // that are unreadable when hard-wrapped at 80 characters.
+  "MD013": false,
+  // Allow hard tabs inside code blocks (e.g. YAML/JSON snippets).
+  "MD010": { "code_blocks": false }
+}

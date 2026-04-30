@@ -34,9 +34,10 @@ A minimal FastAPI app that demonstrates using all major services in the kind-cil
 
 3. Add to `/etc/hosts`:
 
-   ```
+   ```text
    172.18.250.8  fullstack-demo.k8s.local
    ```
+
    (Use the actual IP assigned by CiliumLoadBalancerIPPool)
 
 4. Test:
@@ -46,6 +47,7 @@ A minimal FastAPI app that demonstrates using all major services in the kind-cil
    ```
 
 ## Requirements
+
 - All backing services must be running (see main project)
 - The S3 bucket (`demo-bucket`) must exist (see SeaweedFS example)
 - The OpenBao secret and role must be set up (see OpenBao example)

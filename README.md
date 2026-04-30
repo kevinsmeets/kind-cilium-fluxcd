@@ -6,7 +6,7 @@ All Docker images can optionally be rebuilt with an **extra CA certificate** inj
 
 ## Project Structure
 
-```
+```text
 kind-cilium-fluxcd/
 ├── pipeline.sh          # Main pipeline script (orchestrates everything)
 ├── versions.env                        # Central version configuration
@@ -36,6 +36,7 @@ kind-cilium-fluxcd/
 - [cilium-cli](https://docs.cilium.io/en/stable/gettingstarted/k8s-install-default/#install-the-cilium-cli)
 - *(Optional, only if behind a TLS-intercepting corporate proxy)* a PEM-encoded
   CA certificate. Set `EXTRA_CA_CERT` to its path, e.g.:
+
   ```bash
   export EXTRA_CA_CERT=/usr/local/share/ca-certificates/ZscalerRootCertificate-2048-SHA256.crt
   ```
@@ -80,7 +81,7 @@ kind-cilium-fluxcd/
 
 ## Pipeline Options
 
-```
+```text
 Usage: ./pipeline.sh [options]
 Options:
  -h, --help              Show help message
@@ -111,7 +112,7 @@ Options:
 
 ## Build Images Script
 
-```
+```text
 Usage: ./scripts/build-images.sh [options]
 Options:
  -h, --help       Show help message
@@ -167,7 +168,7 @@ Without these entries, your browser and CLI tools (e.g. `curl`, `aws`, `bao`) ca
 
 Add the following to `/etc/hosts` (adjust IPs if your Docker network differs):
 
-```
+```text
 172.18.250.0	hubble-ui.k8s.local
 172.18.250.2	podinfo.k8s.local
 172.18.250.3	headlamp.k8s.local
@@ -229,7 +230,7 @@ Prometheus Operator CRDs (ServiceMonitor, PodMonitor, PrometheusRule) are pre-in
 
 When installed (`-o` flag), OpenBao is deployed in **standalone mode with persistent file storage**, so secrets, tokens, auth methods and policies survive pod restarts and helm upgrades:
 
-- **UI**: http://openbao.k8s.local
+- **UI**: <http://openbao.k8s.local>
 - **Storage**: `file` backend on a 2 Gi PVC mounted at `/openbao/data` in the `openbao-0` pod
 - **Initialization**: on first install the script runs `bao operator init` with 1 key share / threshold 1 and stores the unseal key + root token in the Kubernetes Secret `openbao-keys` in the `openbao` namespace
 - **Auto-unsealer**: a small `openbao-unsealer` Deployment (busybox + `wget`) polls `openbao-0` directly via the headless `openbao-internal` service and unseals it automatically whenever it comes up sealed (e.g. after a pod restart)
@@ -356,7 +357,7 @@ kubectl -n postgres get secret postgres-superuser -o jsonpath='{.data.password}'
 
 Internal endpoint for other services in the cluster:
 
-```
+```text
 postgres-rw.postgres.svc.cluster.local:5432
 ```
 
@@ -393,7 +394,7 @@ kubectl -n valkey exec -it statefulset/valkey-primary -- valkey-cli -a valkey
 
 Test commands:
 
-```
+```text
 SET hello world
 GET hello
 INFO server
@@ -401,7 +402,7 @@ INFO server
 
 Internal endpoint for other services in the cluster:
 
-```
+```text
 valkey-primary.valkey.svc.cluster.local:6379
 ```
 
@@ -438,7 +439,7 @@ kubectl -n mongodb exec -it deployment/mongodb -- mongosh -u app -p app --authen
 
 Test commands:
 
-```
+```javascript
 db.test.insertOne({ hello: 'world', timestamp: new Date() })
 db.test.find()
 db.stats()
@@ -446,7 +447,7 @@ db.stats()
 
 Internal endpoint for other services in the cluster:
 
-```
+```text
 mongodb.mongodb.svc.cluster.local:27017
 ```
 
