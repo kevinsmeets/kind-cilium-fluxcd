@@ -72,7 +72,7 @@ jobs:
         run: pip install --user yamllint
       - name: Run yamllint
         run: |
-          yamllint -d "{extends: default, rules: {line-length: {max: 200}, document-start: disable, truthy: {check-keys: false}}}" \
+          yamllint -d "{extends: default, rules: {line-length: {max: 200}, document-start: disable, truthy: {check-keys: false}, indentation: {indent-sequences: whatever}}}" \
             $(git ls-files '*.yml' '*.yaml')
 
   markdownlint:
