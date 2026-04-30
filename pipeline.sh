@@ -1618,7 +1618,6 @@ spec:
   storage:
     size: 5Gi
   monitoring:
-    enablePodMonitor: true
     customQueriesConfigMap:
       - name: cnpg-default-monitoring
         key: queries
@@ -1630,6 +1629,22 @@ spec:
     initdb:
       database: app
       owner: app
+EOF
+
+    # Create a PodMonitor to scrape PostgreSQL metrics (replaces the deprecated
+    # spec.monitoring.enablePodMonitor field in the Cluster resource).
+    kubectl -n postgres apply -f - <<EOF
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: postgres
+  namespace: postgres
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: postgres
+  podMetricsEndpoints:
+  - port: metrics
 EOF
 
     echo "Waiting for PostgreSQL cluster to be ready..."
