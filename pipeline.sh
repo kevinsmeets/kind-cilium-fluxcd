@@ -1881,6 +1881,8 @@ if [[ $VALKEY == true ]]; then
         --namespace valkey \
         --version "${VALKEY_HELM_CHART_VERSION}" \
         --values - <<EOF
+image:
+  digest: "${BITNAMI_VALKEY_DIGEST}"
 architecture: standalone
 auth:
   enabled: true
@@ -2188,7 +2190,7 @@ spec:
     spec:
       containers:
       - name: valkey-demo
-        image: bitnami/valkey:${BITNAMI_VALKEY_VERSION}
+        image: valkey/valkey:${VALKEY_VERSION}
         command: ["/bin/sh", "/scripts/demo.sh"]
         env:
         - name: VALKEY_HOST
