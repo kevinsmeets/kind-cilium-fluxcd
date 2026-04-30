@@ -116,12 +116,16 @@ jobs:
           set -e
           # shellcheck disable=SC1091
           source ./versions.env
+          # Variables that are intentionally allowed to be empty
+          ALLOW_EMPTY="EXTRA_CA_CERT"
           missing=0
           while IFS='=' read -r key _; do
             [[ -z "$key" || "$key" =~ ^# ]] && continue
             key="${key#export }"
             key="${key// /}"
             [[ -z "$key" ]] && continue
+            # Skip variables that are allowed to be empty
+            [[ " $ALLOW_EMPTY " == *" $key "* ]] && continue
             if [[ -z "${!key:-}" ]]; then
               echo "::error file=versions.env::Variable '$key' is empty"
               missing=$((missing + 1))
