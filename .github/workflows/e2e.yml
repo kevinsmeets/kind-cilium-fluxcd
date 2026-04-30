@@ -26,9 +26,9 @@ jobs:
             flags: ""
             # No extra flags — just KinD + Cilium
           - name: flux
-            flags: "-b -f"
+            flags: "-f"
           - name: podinfo
-            flags: "-b -f -p"
+            flags: "-f -p"
           - name: cnpg-example
             flags: "-g -y"
 
@@ -45,7 +45,7 @@ jobs:
         run: |
           set -e
           # kind
-          KIND_VERSION="v0.27.0"
+          KIND_VERSION="v1.35.0"
           curl -fsSLo ./kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
           chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
 
@@ -53,7 +53,7 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
           # cilium CLI
-          CILIUM_CLI_VERSION="v0.18.3"
+          CILIUM_CLI_VERSION="v0.19.0"
           curl -fsSL "https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-amd64.tar.gz" \
             | sudo tar xz -C /usr/local/bin cilium
 
@@ -63,7 +63,7 @@ jobs:
       # ── Run pipeline ───────────────────────────────────────────────
       - name: Run pipeline.sh ${{ matrix.flags }}
         run: |
-          ./pipeline.sh -i ${{ matrix.flags }}
+          ./pipeline.sh -b -i ${{ matrix.flags }}
 
       # ── Baseline assertions (always run) ────────────────────────────
       - name: Verify nodes are Ready
