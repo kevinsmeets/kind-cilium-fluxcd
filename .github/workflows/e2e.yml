@@ -132,10 +132,12 @@ jobs:
 
           # Wait for at least one write cycle (pods write every 10s)
           sleep 15
+          APP_PASSWORD="$(kubectl -n postgres get secret postgres-app \
+            -o jsonpath='{.data.password}' | base64 --decode)"
 
           # Verify data was written by the example pods
           ROW_COUNT=$(kubectl -n postgres exec postgres-1 -- \
-            PGPASSWORD=$(kubectl -n postgres get secret postgres-app -o jsonpath='{.data.password}' | base64 --decode) \
+            env PGPASSWORD="$APP_PASSWORD" \
             psql -h localhost -U app -d app -tAc \
             "SELECT COUNT(*) FROM demo_events;")
 
@@ -146,7 +148,7 @@ jobs:
           fi
 
           POD_COUNT=$(kubectl -n postgres exec postgres-1 -- \
-            PGPASSWORD=$(kubectl -n postgres get secret postgres-app -o jsonpath='{.data.password}' | base64 --decode) \
+            env PGPASSWORD="$APP_PASSWORD" \
             psql -h localhost -U app -d app -tAc \
             "SELECT COUNT(DISTINCT pod_name) FROM demo_events;")
 
