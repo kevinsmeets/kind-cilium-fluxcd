@@ -1788,7 +1788,9 @@ data:
 
       sleep 10
     done
----
+EOF
+
+    kubectl -n cnpg-example apply -f - <<EOF
 apiVersion: apps/v1
 kind: Deployment
 metadata:
