@@ -26,9 +26,9 @@ jobs:
             flags: ""
             # No extra flags — just KinD + Cilium
           - name: flux
-            flags: "-f"
+            flags: "-b -f"
           - name: podinfo
-            flags: "-f -p"
+            flags: "-b -f -p"
           - name: cnpg-example
             flags: "-g -y"
 
