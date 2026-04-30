@@ -58,7 +58,7 @@ jobs:
             | sudo tar xz -C /usr/local/bin cilium
 
           # flux CLI (must match FLUX_VERSION in versions.env)
-          source ./versions.env
+          source ../../versions.env
           curl -fsSL https://fluxcd.io/install.sh | bash -s -- "$FLUX_VERSION"
 
       # ── Run pipeline ───────────────────────────────────────────────
