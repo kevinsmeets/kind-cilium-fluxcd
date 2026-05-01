@@ -33,7 +33,7 @@ jobs:
             flags: "-g -y"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # ── Prerequisites ──────────────────────────────────────────────
       - name: Raise inotify limits

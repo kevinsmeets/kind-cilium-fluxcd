@@ -1599,7 +1599,7 @@ EOF
     for i in $(seq 1 60); do
         if kubectl -n cnpg-system get endpoints cnpg-webhook-service -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null | grep -q .; then
             # Endpoint exists — now verify the webhook is actually reachable
-            if kubectl apply --dry-run=server -f - <<'DRYRUN' 2>/dev/null
+            if kubectl apply --dry-run=server -f - <<'DRYRUN' 2>/dev/null; then
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -1610,7 +1610,6 @@ spec:
   storage:
     size: 1Gi
 DRYRUN
-            then
                 echo "CNPG webhook endpoint is ready and reachable."
                 break
             fi
