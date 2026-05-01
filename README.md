@@ -8,7 +8,7 @@ All Docker images can optionally be rebuilt with an **extra CA certificate** inj
 
 ```text
 kind-cilium-fluxcd/
-├── pipeline.sh          # Main pipeline script (orchestrates everything)
+├── pipeline.sh                         # Main pipeline script (orchestrates everything)
 ├── versions.env                        # Central version configuration
 ├── scripts/
 │   ├── create-cluster.sh               # Create KinD cluster with local Docker registry
@@ -84,7 +84,7 @@ kind-cilium-fluxcd/
 ```text
 Usage: ./pipeline.sh [options]
 Options:
- -h, --help              Show help message
+ -h, --help              Show this help message
  -c, --existing-cluster  Use existing cluster (do not create new)
  -n, --no-cilium         Do not install Cilium CNI (assumes cluster already has a CNI installed)
  -b, --build-images      Build Docker images (optionally with extra CA cert via EXTRA_CA_CERT)
@@ -103,11 +103,12 @@ Options:
  -t, --openbao-example   Deploy an example app demonstrating OpenBao (read secrets from vault)
  -g, --cnpg              Install CloudNativePG (PostgreSQL database operator)
  -y, --cnpg-example      Deploy an example app demonstrating CloudNativePG (PostgreSQL read/write)
- -v, --valkey             Install Valkey (key-value cache, open-source Redis replacement)
- -x, --valkey-example     Deploy an example app demonstrating Valkey (write/read key-value pairs)
- -j, --mongodb            Install MongoDB (NoSQL document database)
- -q, --mongodb-example    Deploy an example app demonstrating MongoDB (insert/query documents)
- -a, --all               Install everything (metrics server, fluxcd, podinfo, dashboard, reloader, reloader-example, kube-prometheus-stack, loki, seaweedfs, seaweedfs-example, openbao, openbao-example, cnpg, cnpg-example, valkey, valkey-example, mongodb, mongodb-example)
+ -v, --valkey            Install Valkey (key-value cache, open-source Redis replacement)
+ -x, --valkey-example    Deploy an example app demonstrating Valkey (write/read key-value pairs)
+ -j, --mongodb           Install MongoDB (NoSQL document database)
+ -q, --mongodb-example   Deploy an example app demonstrating MongoDB (insert/query documents)
+ -z, --zabbix            Install Zabbix (monitoring and alerting platform)
+ -a, --all               Install everything
 ```
 
 ## Build Images Script
