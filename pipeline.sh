@@ -1591,15 +1591,31 @@ EOF
 
     kubectl -n cnpg-system rollout status --watch --timeout=10m deployment/cnpg-cloudnative-pg
 
-    # Wait for the CNPG webhook to become reachable (Cilium needs time to
-    # program the service endpoints after the operator pod is Ready).
+    # Wait for the CNPG webhook to become reachable. Cilium needs time to
+    # program the eBPF datapath after the operator pod is Ready, so the
+    # endpoint IP may exist before the kube-apiserver can actually reach it.
+    # Use a dry-run server-side apply to verify end-to-end webhook connectivity.
     echo "Waiting for CNPG webhook to become ready..."
-    for i in $(seq 1 30); do
+    for i in $(seq 1 60); do
         if kubectl -n cnpg-system get endpoints cnpg-webhook-service -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null | grep -q .; then
-            echo "CNPG webhook endpoint is ready."
-            break
+            # Endpoint exists — now verify the webhook is actually reachable
+            if kubectl apply --dry-run=server -f - <<'DRYRUN' 2>/dev/null
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: webhook-test
+  namespace: default
+spec:
+  instances: 1
+  storage:
+    size: 1Gi
+DRYRUN
+            then
+                echo "CNPG webhook endpoint is ready and reachable."
+                break
+            fi
         fi
-        echo "  Attempt $i/30: webhook endpoint not yet available, retrying in 5s..."
+        echo "  Attempt $i/60: webhook not yet reachable, retrying in 5s..."
         sleep 5
     done
 
