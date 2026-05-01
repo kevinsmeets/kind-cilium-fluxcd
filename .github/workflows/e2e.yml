@@ -96,7 +96,7 @@ jobs:
       - name: Verify Flux components
         if: always() && contains(matrix.flags, '-f')
         run: |
-          flux check
+          flux check --namespace cluster-config
           kubectl -n cluster-config get pods
           kubectl -n cluster-config wait --for=condition=Ready pod --all --timeout=3m
 
