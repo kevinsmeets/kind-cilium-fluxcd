@@ -29,8 +29,8 @@ jobs:
             flags: "-f"
           - name: podinfo
             flags: "-f -p"
-        #   - name: cnpg-example
-        #     flags: "-g -y"
+          - name: cnpg-example
+            flags: "-g -y"
 
     steps:
       - uses: actions/checkout@v4
@@ -131,7 +131,26 @@ jobs:
         if: always() && contains(matrix.flags, '-g')
         run: |
           kubectl -n cnpg-system rollout status --watch --timeout=5m deployment/cnpg-cloudnative-pg
-          kubectl -n postgres wait --for=condition=Ready cluster/postgres --timeout=10m
+
+          # Wait for the Cluster CRD and the postgres instance to appear,
+          # then wait for it to become Ready.
+          TIMEOUT=600
+          INTERVAL=10
+          ELAPSED=0
+          until kubectl -n postgres get cluster/postgres &>/dev/null; do
+            if (( ELAPSED >= TIMEOUT )); then
+              echo "ERROR: cluster/postgres not found after ${TIMEOUT}s"
+              kubectl api-resources | grep cluster || true
+              kubectl -n postgres get all || true
+              exit 1
+            fi
+            echo "Waiting for cluster/postgres resource to exist... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            (( ELAPSED += INTERVAL ))
+          done
+          echo "cluster/postgres exists, waiting for Ready condition..."
+
+          kubectl -n postgres wait --for=condition=Ready cluster/postgres --timeout=$(( TIMEOUT - ELAPSED ))s
           kubectl -n postgres get pods
 
       - name: Verify CNPG example app
