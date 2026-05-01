@@ -85,7 +85,24 @@ jobs:
       - name: Verify kube-system pods
         if: always()
         run: |
-          kubectl -n kube-system wait --for=condition=Ready pod --all --timeout=5m
+          # Pods may be replaced mid-wait (e.g. coredns rolling update),
+          # causing "NotFound" errors. Retry so the pod list is re-snapshotted.
+          ATTEMPTS=6
+          INTERVAL=10
+          for (( i=1; i<=ATTEMPTS; i++ )); do
+            echo "Attempt $i/$ATTEMPTS: waiting for all kube-system pods to be Ready..."
+            if kubectl -n kube-system wait --for=condition=Ready pod --all --timeout=5m; then
+              echo "All kube-system pods are Ready."
+              break
+            fi
+            if (( i == ATTEMPTS )); then
+              echo "ERROR: kube-system pods not Ready after $ATTEMPTS attempts"
+              kubectl -n kube-system get pods
+              exit 1
+            fi
+            echo "Retrying in ${INTERVAL}s..."
+            sleep "$INTERVAL"
+          done
           kubectl -n kube-system get pods
 
       - name: Cilium status
