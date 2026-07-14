@@ -41,6 +41,8 @@ VALKEY_EXAMPLE=false
 MONGODB=false
 MONGODB_EXAMPLE=false
 ZABBIX=false
+STRIMZI=false
+STRIMZI_EXAMPLE=false
 
 usage() {
     echo "Usage: $0 [options]"
@@ -69,7 +71,9 @@ usage() {
     echo " -j, --mongodb           Install MongoDB (NoSQL document database)"
     echo " -q, --mongodb-example   Deploy an example app demonstrating MongoDB (insert/query documents)"
     echo " -z, --zabbix            Install Zabbix (monitoring and alerting platform)"
-    echo " -a, --all               Install everything (metrics server, fluxcd, podinfo, dashboard, reloader, reloader-example, kube-prometheus-stack, loki, seaweedfs, seaweedfs-example, openbao, openbao-example, cnpg, cnpg-example, valkey, valkey-example, mongodb, mongodb-example, zabbix)"
+    echo " -u, --strimzi           Install Strimzi (Apache Kafka operator + 3-node Kafka cluster with metrics, Grafana dashboards, and Cruise Control)"
+    echo "     --strimzi-example   Deploy an example app demonstrating Strimzi/Kafka (produce and consume messages on a topic)"
+    echo " -a, --all               Install everything (metrics server, fluxcd, podinfo, dashboard, reloader, reloader-example, kube-prometheus-stack, loki, seaweedfs, seaweedfs-example, openbao, openbao-example, cnpg, cnpg-example, valkey, valkey-example, mongodb, mongodb-example, zabbix, strimzi, strimzi-example)"
 }
 
 while [ $# -gt 0 ]; do
@@ -122,6 +126,10 @@ while [ $# -gt 0 ]; do
         MONGODB_EXAMPLE=true
     elif [[ $1 == "-z" || $1 == "--zabbix" ]]; then
         ZABBIX=true
+    elif [[ $1 == "-u" || $1 == "--strimzi" ]]; then
+        STRIMZI=true
+    elif [[ $1 == "--strimzi-example" ]]; then
+        STRIMZI_EXAMPLE=true
     elif [[ $1 == "-a" || $1 == "--all" ]]; then
         METRICS_SERVER=true
         FLUX=true
@@ -142,6 +150,8 @@ while [ $# -gt 0 ]; do
         MONGODB=true
         MONGODB_EXAMPLE=true
         ZABBIX=true
+        STRIMZI=true
+        STRIMZI_EXAMPLE=true
     else
         echo "$0: unknown option: $1"
         exit 1
@@ -177,6 +187,10 @@ fi
 if [[ $MONGODB_EXAMPLE == true ]] && [[ $MONGODB != true ]]; then
     echo "Note: Enabling MongoDB (required by mongodb-example)."
     MONGODB=true
+fi
+if [[ $STRIMZI_EXAMPLE == true ]] && [[ $STRIMZI != true ]]; then
+    echo "Note: Enabling Strimzi (required by strimzi-example)."
+    STRIMZI=true
 fi
 
 echo "----------"
@@ -2761,4 +2775,620 @@ EOF
     echo "  Zabbix Server: zabbix-zabbix-server.zabbix.svc.cluster.local:10051"
     echo "  Zabbix Web:    zabbix-zabbix-web.zabbix.svc.cluster.local:80"
     echo "  PostgreSQL:    zabbix-postgresql.zabbix.svc.cluster.local:5432"
+fi
+
+if [[ $STRIMZI == true ]]; then
+    echo "----------"
+    echo "Install Strimzi Kafka operator (v${STRIMZI_HELM_CHART_VERSION})..."
+    helm repo add strimzi https://strimzi.io/charts/
+    helm repo update strimzi
+    kubectl create namespace kafka --dry-run=client -o yaml | kubectl apply -f -
+
+    # The Strimzi cluster operator watches the namespace it is deployed in
+    # (kafka) by default, which is where we create the Kafka cluster below.
+    helm upgrade --install strimzi strimzi/strimzi-kafka-operator \
+        --namespace kafka \
+        --version "${STRIMZI_HELM_CHART_VERSION}" \
+        --values - <<EOF
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 200m
+  limits:
+    memory: 512Mi
+EOF
+
+    kubectl -n kafka rollout status --watch --timeout=10m deployment/strimzi-cluster-operator
+
+    # JMX Prometheus Exporter configuration for the Kafka brokers. This is the
+    # canonical config shipped in the Strimzi metrics examples and produces the
+    # metrics consumed by the Strimzi Grafana dashboards.
+    kubectl -n kafka apply -f - <<'EOF'
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: kafka-metrics
+  namespace: kafka
+  labels:
+    app: strimzi
+data:
+  kafka-metrics-config.yml: |
+    # See https://github.com/prometheus/jmx_exporter for more info about JMX Prometheus Exporter metrics
+    lowercaseOutputName: true
+    rules:
+    # Special cases and very specific rules
+    - pattern: kafka.server<type=(.+), name=(.+), clientId=(.+), topic=(.+), partition=(.*)><>Value
+      name: kafka_server_$1_$2
+      type: GAUGE
+      labels:
+        clientId: "$3"
+        topic: "$4"
+        partition: "$5"
+    - pattern: kafka.server<type=(.+), name=(.+), clientId=(.+), brokerHost=(.+), brokerPort=(.+)><>Value
+      name: kafka_server_$1_$2
+      type: GAUGE
+      labels:
+        clientId: "$3"
+        broker: "$4:$5"
+    - pattern: kafka.server<type=(.+), cipher=(.+), protocol=(.+), listener=(.+), networkProcessor=(.+)><>connections
+      name: kafka_server_$1_connections_tls_info
+      type: GAUGE
+      labels:
+        cipher: "$2"
+        protocol: "$3"
+        listener: "$4"
+        networkProcessor: "$5"
+    - pattern: kafka.server<type=(.+), clientSoftwareName=(.+), clientSoftwareVersion=(.+), listener=(.+), networkProcessor=(.+)><>connections
+      name: kafka_server_$1_connections_software
+      type: GAUGE
+      labels:
+        clientSoftwareName: "$2"
+        clientSoftwareVersion: "$3"
+        listener: "$4"
+        networkProcessor: "$5"
+    - pattern: "kafka.server<type=(.+), listener=(.+), networkProcessor=(.+)><>(.+-total):"
+      name: kafka_server_$1_$4
+      type: COUNTER
+      labels:
+        listener: "$2"
+        networkProcessor: "$3"
+    - pattern: "kafka.server<type=(.+), listener=(.+), networkProcessor=(.+)><>(.+):"
+      name: kafka_server_$1_$4
+      type: GAUGE
+      labels:
+        listener: "$2"
+        networkProcessor: "$3"
+    - pattern: kafka.server<type=(.+), listener=(.+), networkProcessor=(.+)><>(.+-total)
+      name: kafka_server_$1_$4
+      type: COUNTER
+      labels:
+        listener: "$2"
+        networkProcessor: "$3"
+    - pattern: kafka.server<type=(.+), listener=(.+), networkProcessor=(.+)><>(.+)
+      name: kafka_server_$1_$4
+      type: GAUGE
+      labels:
+        listener: "$2"
+        networkProcessor: "$3"
+    # Some percent metrics use MeanRate attribute
+    # Ex) kafka.server<type=(KafkaRequestHandlerPool), name=(RequestHandlerAvgIdlePercent)><>MeanRate
+    - pattern: kafka.(\w+)<type=(.+), name=(.+)Percent\w*><>MeanRate
+      name: kafka_$1_$2_$3_percent
+      type: GAUGE
+    # Generic gauges for percents
+    - pattern: kafka.(\w+)<type=(.+), name=(.+)Percent\w*><>Value
+      name: kafka_$1_$2_$3_percent
+      type: GAUGE
+    - pattern: kafka.(\w+)<type=(.+), name=(.+)Percent\w*, (.+)=(.+)><>Value
+      name: kafka_$1_$2_$3_percent
+      type: GAUGE
+      labels:
+        "$4": "$5"
+    # Generic per-second counters with 0-2 key/value pairs
+    - pattern: kafka.(\w+)<type=(.+), name=(.+)PerSec\w*, (.+)=(.+), (.+)=(.+)><>Count
+      name: kafka_$1_$2_$3_total
+      type: COUNTER
+      labels:
+        "$4": "$5"
+        "$6": "$7"
+    - pattern: kafka.(\w+)<type=(.+), name=(.+)PerSec\w*, (.+)=(.+)><>Count
+      name: kafka_$1_$2_$3_total
+      type: COUNTER
+      labels:
+        "$4": "$5"
+    - pattern: kafka.(\w+)<type=(.+), name=(.+)PerSec\w*><>Count
+      name: kafka_$1_$2_$3_total
+      type: COUNTER
+    # Generic gauges with 0-2 key/value pairs
+    - pattern: kafka.(\w+)<type=(.+), name=(.+), (.+)=(.+), (.+)=(.+)><>Value
+      name: kafka_$1_$2_$3
+      type: GAUGE
+      labels:
+        "$4": "$5"
+        "$6": "$7"
+    - pattern: kafka.(\w+)<type=(.+), name=(.+), (.+)=(.+)><>Value
+      name: kafka_$1_$2_$3
+      type: GAUGE
+      labels:
+        "$4": "$5"
+    - pattern: kafka.(\w+)<type=(.+), name=(.+)><>Value
+      name: kafka_$1_$2_$3
+      type: GAUGE
+    # Emulate Prometheus 'Summary' metrics for the exported 'Histogram's.
+    # Note that these are missing the '_sum' metric!
+    - pattern: kafka.(\w+)<type=(.+), name=(.+), (.+)=(.+), (.+)=(.+)><>Count
+      name: kafka_$1_$2_$3_count
+      type: COUNTER
+      labels:
+        "$4": "$5"
+        "$6": "$7"
+    - pattern: kafka.(\w+)<type=(.+), name=(.+), (.+)=(.*), (.+)=(.+)><>(\d+)thPercentile
+      name: kafka_$1_$2_$3
+      type: GAUGE
+      labels:
+        "$4": "$5"
+        "$6": "$7"
+        quantile: "0.$8"
+    - pattern: kafka.(\w+)<type=(.+), name=(.+), (.+)=(.+)><>Count
+      name: kafka_$1_$2_$3_count
+      type: COUNTER
+      labels:
+        "$4": "$5"
+    - pattern: kafka.(\w+)<type=(.+), name=(.+), (.+)=(.*)><>(\d+)thPercentile
+      name: kafka_$1_$2_$3
+      type: GAUGE
+      labels:
+        "$4": "$5"
+        quantile: "0.$6"
+    - pattern: kafka.(\w+)<type=(.+), name=(.+)><>Count
+      name: kafka_$1_$2_$3_count
+      type: COUNTER
+    - pattern: kafka.(\w+)<type=(.+), name=(.+)><>(\d+)thPercentile
+      name: kafka_$1_$2_$3
+      type: GAUGE
+      labels:
+        quantile: "0.$4"
+    # KRaft overall related metrics
+    # distinguish between always increasing COUNTER (total and max) and variable GAUGE (all others) metrics
+    - pattern: "kafka.server<type=raft-metrics><>(.+-total|.+-max):"
+      name: kafka_server_raftmetrics_$1
+      type: COUNTER
+    - pattern: "kafka.server<type=raft-metrics><>(current-state): (.+)"
+      name: kafka_server_raftmetrics_$1
+      value: 1
+      type: UNTYPED
+      labels:
+        $1: "$2"
+    - pattern: "kafka.server<type=raft-metrics><>(.+):"
+      name: kafka_server_raftmetrics_$1
+      type: GAUGE
+    # KRaft "low level" channels related metrics
+    # distinguish between always increasing COUNTER (total and max) and variable GAUGE (all others) metrics
+    - pattern: "kafka.server<type=raft-channel-metrics><>(.+-total|.+-max):"
+      name: kafka_server_raftchannelmetrics_$1
+      type: COUNTER
+    - pattern: "kafka.server<type=raft-channel-metrics><>(.+):"
+      name: kafka_server_raftchannelmetrics_$1
+      type: GAUGE
+    # Broker metrics related to fetching metadata topic records in KRaft mode
+    - pattern: "kafka.server<type=broker-metadata-metrics><>(.+):"
+      name: kafka_server_brokermetadatametrics_$1
+      type: GAUGE
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: cruise-control-metrics
+  namespace: kafka
+  labels:
+    app: strimzi
+data:
+  metrics-config.yml: |
+    # See https://github.com/prometheus/jmx_exporter for more info about JMX Prometheus Exporter metrics
+    lowercaseOutputName: true
+    rules:
+    - pattern: kafka.cruisecontrol<name=(.+)><>(\w+)
+      name: kafka_cruisecontrol_$1_$2
+      type: GAUGE
+EOF
+
+    # Create the Kafka cluster: a single node pool with 3 dual-role
+    # (controller + broker) KRaft nodes, JMX metrics enabled, Cruise Control
+    # for rebalancing, and Kafka Exporter for topic/consumer-lag metrics.
+    kubectl -n kafka apply -f - <<EOF
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: dual-role
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  replicas: 3
+  roles:
+    - controller
+    - broker
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: persistent-claim
+        size: 10Gi
+        deleteClaim: false
+        kraftMetadata: shared
+  resources:
+    requests:
+      memory: 1Gi
+      cpu: 250m
+    limits:
+      memory: 2Gi
+      cpu: "1"
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: kafka
+  namespace: kafka
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
+spec:
+  kafka:
+    version: ${KAFKA_VERSION}
+    metadataVersion: ${KAFKA_METADATA_VERSION}
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+    config:
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      default.replication.factor: 3
+      min.insync.replicas: 2
+    metricsConfig:
+      type: jmxPrometheusExporter
+      valueFrom:
+        configMapKeyRef:
+          name: kafka-metrics
+          key: kafka-metrics-config.yml
+  entityOperator:
+    topicOperator:
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+        limits:
+          memory: 512Mi
+          cpu: 500m
+    userOperator:
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+        limits:
+          memory: 512Mi
+          cpu: 500m
+  cruiseControl:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+    metricsConfig:
+      type: jmxPrometheusExporter
+      valueFrom:
+        configMapKeyRef:
+          name: cruise-control-metrics
+          key: metrics-config.yml
+  kafkaExporter:
+    topicRegex: ".*"
+    groupRegex: ".*"
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 50m
+      limits:
+        memory: 128Mi
+        cpu: 250m
+EOF
+
+    echo "Waiting for the Kafka cluster to become ready (this can take a few minutes)..."
+    kubectl -n kafka wait --for=condition=Ready kafka/kafka --timeout=15m
+
+    # Scrape Strimzi metrics with a PodMonitor (Kafka brokers, Cruise Control,
+    # Kafka Exporter and the Entity Operator all expose metrics on the
+    # 'tcp-prometheus' port). Only created when the PodMonitor CRD is present.
+    if kubectl get crd podmonitors.monitoring.coreos.com &>/dev/null; then
+        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+        kubectl -n monitoring apply -f - <<'EOF'
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: strimzi-kafka-resources
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchExpressions:
+      - key: "strimzi.io/kind"
+        operator: In
+        values: ["Kafka", "KafkaConnect", "KafkaMirrorMaker", "KafkaMirrorMaker2", "KafkaBridge"]
+  namespaceSelector:
+    matchNames:
+      - kafka
+  podMetricsEndpoints:
+    - path: /metrics
+      port: tcp-prometheus
+      relabelings:
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(strimzi_io_.+)
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: kubernetes_pod_name
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node_name
+        - sourceLabels: [__meta_kubernetes_pod_host_ip]
+          targetLabel: node_ip
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: strimzi-cluster-operator
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      strimzi.io/kind: cluster-operator
+  namespaceSelector:
+    matchNames:
+      - kafka
+  podMetricsEndpoints:
+    - path: /metrics
+      port: http
+      relabelings:
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(strimzi_io_.+)
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: kubernetes_pod_name
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node_name
+        - sourceLabels: [__meta_kubernetes_pod_host_ip]
+          targetLabel: node_ip
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: strimzi-entity-operator
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: entity-operator
+  namespaceSelector:
+    matchNames:
+      - kafka
+  podMetricsEndpoints:
+    - path: /metrics
+      port: healthcheck-to
+    - path: /metrics
+      port: healthcheck-uo
+EOF
+    fi
+
+    # Load the official Strimzi Grafana dashboards (they use a DS_PROMETHEUS
+    # datasource variable that auto-resolves to the Prometheus datasource).
+    if kubectl get deployment -n monitoring kube-prometheus-stack-grafana &>/dev/null; then
+        echo "Adding Strimzi Grafana dashboards..."
+        for dash in strimzi-kafka strimzi-kafka-exporter strimzi-cruise-control strimzi-kraft strimzi-operators; do
+            if curl -fsSL "https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/${STRIMZI_HELM_CHART_VERSION}/examples/metrics/grafana-dashboards/${dash}.json" -o "/tmp/${dash}.json"; then
+                kubectl -n monitoring create configmap "grafana-dashboard-${dash}" \
+                    --from-file="${dash}.json=/tmp/${dash}.json" \
+                    --dry-run=client -o yaml \
+                    | kubectl label --local -f - grafana_dashboard=1 --dry-run=client -o yaml \
+                    | kubectl apply -f -
+            fi
+        done
+        kubectl -n monitoring rollout restart deployment/kube-prometheus-stack-grafana
+        kubectl -n monitoring rollout status --watch --timeout=5m deployment/kube-prometheus-stack-grafana
+    fi
+
+    echo
+    echo "Strimzi deployed. Kafka cluster 'kafka' running in namespace 'kafka'."
+    echo
+    echo "Connection details (from within the cluster):"
+    echo "  Bootstrap (plain): kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+    echo "  Bootstrap (tls):   kafka-kafka-bootstrap.kafka.svc.cluster.local:9093"
+    echo
+    echo "Inspect the cluster:"
+    echo "  kubectl -n kafka get kafka,kafkanodepool,pods"
+    echo
+    echo "List topics:"
+    echo "  kubectl -n kafka exec -it kafka-dual-role-0 -- /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-kafka-bootstrap:9092 --list"
+    echo
+    echo "Cruise Control status (rebalancing):"
+    echo "  kubectl -n kafka get pods -l strimzi.io/name=kafka-cruise-control"
+fi
+
+if [[ $STRIMZI_EXAMPLE == true ]]; then
+    echo "----------"
+    echo "Deploy Strimzi/Kafka example app (produce and consume messages)..."
+
+    # Create a topic managed by the Strimzi Topic Operator.
+    kubectl -n kafka apply -f - <<'EOF'
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: demo-topic
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: 604800000
+    segment.bytes: 1073741824
+EOF
+
+    echo "Waiting for topic 'demo-topic' to be ready..."
+    kubectl -n kafka wait --for=condition=Ready kafkatopic/demo-topic --timeout=5m
+
+    kubectl create namespace kafka-example --dry-run=client -o yaml | kubectl apply -f -
+
+    # Producer and consumer scripts (literal heredoc: shell expansion happens
+    # inside the containers at runtime, not here).
+    kubectl -n kafka-example apply -f - <<'EOF'
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-demo-scripts
+  namespace: kafka-example
+data:
+  producer.sh: |
+    #!/bin/sh
+    BOOTSTRAP="${BOOTSTRAP_SERVER:-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092}"
+    TOPIC="${TOPIC:-demo-topic}"
+    echo "Kafka producer starting; topic=${TOPIC} bootstrap=${BOOTSTRAP}"
+    i=0
+    while true; do
+      i=$((i + 1))
+      MSG="{\"pod\":\"$(hostname)\",\"counter\":${i},\"timestamp\":\"$(date -Iseconds)\"}"
+      echo "produced: ${MSG}" >&2
+      echo "${MSG}"
+      sleep 2
+    done | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server "${BOOTSTRAP}" --topic "${TOPIC}"
+  consumer.sh: |
+    #!/bin/sh
+    BOOTSTRAP="${BOOTSTRAP_SERVER:-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092}"
+    TOPIC="${TOPIC:-demo-topic}"
+    GROUP="${GROUP:-demo-consumer-group}"
+    echo "Kafka consumer starting; topic=${TOPIC} group=${GROUP} bootstrap=${BOOTSTRAP}"
+    exec /opt/kafka/bin/kafka-console-consumer.sh \
+      --bootstrap-server "${BOOTSTRAP}" \
+      --topic "${TOPIC}" \
+      --group "${GROUP}" \
+      --from-beginning
+EOF
+
+    kubectl -n kafka-example apply -f - <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-producer
+  namespace: kafka-example
+  labels:
+    app: kafka-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-producer
+  template:
+    metadata:
+      labels:
+        app: kafka-producer
+    spec:
+      containers:
+      - name: producer
+        image: quay.io/strimzi/kafka:${STRIMZI_KAFKA_IMAGE_TAG}
+        command: ["/bin/sh", "/scripts/producer.sh"]
+        env:
+        - name: BOOTSTRAP_SERVER
+          value: "kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+        - name: TOPIC
+          value: "demo-topic"
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+          readOnly: true
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 50m
+          limits:
+            memory: 512Mi
+            cpu: 500m
+      volumes:
+      - name: scripts
+        configMap:
+          name: kafka-demo-scripts
+          defaultMode: 0755
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-consumer
+  namespace: kafka-example
+  labels:
+    app: kafka-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-consumer
+  template:
+    metadata:
+      labels:
+        app: kafka-consumer
+    spec:
+      containers:
+      - name: consumer
+        image: quay.io/strimzi/kafka:${STRIMZI_KAFKA_IMAGE_TAG}
+        command: ["/bin/sh", "/scripts/consumer.sh"]
+        env:
+        - name: BOOTSTRAP_SERVER
+          value: "kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+        - name: TOPIC
+          value: "demo-topic"
+        - name: GROUP
+          value: "demo-consumer-group"
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+          readOnly: true
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 50m
+          limits:
+            memory: 512Mi
+            cpu: 500m
+      volumes:
+      - name: scripts
+        configMap:
+          name: kafka-demo-scripts
+          defaultMode: 0755
+EOF
+
+    kubectl -n kafka-example rollout status --watch --timeout=5m deployment/kafka-producer
+    kubectl -n kafka-example rollout status --watch --timeout=5m deployment/kafka-consumer
+    echo
+    echo "Strimzi example deployed to namespace 'kafka-example'."
+    echo "The producer sends a JSON message to topic 'demo-topic' every 2 seconds;"
+    echo "the consumer reads them from the beginning and prints them."
+    echo
+    echo "Watch the produced messages:"
+    echo "  kubectl -n kafka-example logs -f -l app=kafka-producer"
+    echo
+    echo "Watch the consumed messages:"
+    echo "  kubectl -n kafka-example logs -f -l app=kafka-consumer"
+    echo
+    echo "Inspect the topic:"
+    echo "  kubectl -n kafka get kafkatopic demo-topic -o yaml"
 fi

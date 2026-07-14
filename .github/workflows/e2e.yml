@@ -31,6 +31,8 @@ jobs:
             flags: "-f -p"
           - name: cnpg-example
             flags: "-g -y"
+          - name: strimzi-example
+            flags: "-u --strimzi-example"
 
     steps:
       - uses: actions/checkout@v6
@@ -198,6 +200,63 @@ jobs:
             "SELECT COUNT(DISTINCT pod_name) FROM demo_events;")
 
           echo "Distinct pods writing: $POD_COUNT"
+
+      # ── Strimzi / Kafka assertions ──────────────────────────────────
+      - name: Verify Strimzi operator and Kafka cluster
+        if: always() && contains(matrix.flags, '-u')
+        run: |
+          kubectl -n kafka rollout status --watch --timeout=10m deployment/strimzi-cluster-operator
+
+          # Wait for the Kafka custom resource to appear, then become Ready.
+          TIMEOUT=900
+          INTERVAL=10
+          ELAPSED=0
+          until kubectl -n kafka get kafka/kafka &>/dev/null; do
+            if (( ELAPSED >= TIMEOUT )); then
+              echo "ERROR: kafka/kafka not found after ${TIMEOUT}s"
+              kubectl -n kafka get all || true
+              exit 1
+            fi
+            echo "Waiting for kafka/kafka resource to exist... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            (( ELAPSED += INTERVAL ))
+          done
+          echo "kafka/kafka exists, waiting for Ready condition..."
+
+          kubectl -n kafka wait --for=condition=Ready kafka/kafka --timeout=$(( TIMEOUT - ELAPSED ))s
+          kubectl -n kafka get kafka,kafkanodepool,pods
+
+      - name: Verify Strimzi example app
+        if: always() && contains(matrix.flags, 'strimzi-example')
+        run: |
+          # The topic is managed by the Topic Operator
+          kubectl -n kafka wait --for=condition=Ready kafkatopic/demo-topic --timeout=5m
+
+          kubectl -n kafka-example rollout status --watch --timeout=5m deployment/kafka-producer
+          kubectl -n kafka-example rollout status --watch --timeout=5m deployment/kafka-consumer
+
+          # Wait for messages to flow end-to-end: the consumer prints JSON
+          # messages containing a "counter" field produced by the producer.
+          ATTEMPTS=18
+          INTERVAL=10
+          for (( i=1; i<=ATTEMPTS; i++ )); do
+            if kubectl -n kafka-example logs -l app=kafka-consumer --tail=100 2>/dev/null | grep -q '"counter"'; then
+              echo "Consumer received messages from topic 'demo-topic'."
+              break
+            fi
+            if (( i == ATTEMPTS )); then
+              echo "ERROR: consumer did not receive any messages after $(( ATTEMPTS * INTERVAL ))s"
+              echo "--- producer logs ---"
+              kubectl -n kafka-example logs -l app=kafka-producer --tail=50 || true
+              echo "--- consumer logs ---"
+              kubectl -n kafka-example logs -l app=kafka-consumer --tail=50 || true
+              exit 1
+            fi
+            echo "Waiting for consumer to receive messages... ($i/$ATTEMPTS)"
+            sleep "$INTERVAL"
+          done
+
+          kubectl -n kafka-example logs -l app=kafka-consumer --tail=5
 
       # ── Diagnostics on failure ──────────────────────────────────────
       - name: Collect diagnostics

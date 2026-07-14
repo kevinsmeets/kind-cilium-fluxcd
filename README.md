@@ -108,6 +108,8 @@ Options:
  -j, --mongodb           Install MongoDB (NoSQL document database)
  -q, --mongodb-example   Deploy an example app demonstrating MongoDB (insert/query documents)
  -z, --zabbix            Install Zabbix (monitoring and alerting platform)
+ -u, --strimzi           Install Strimzi (Apache Kafka operator + 3-node Kafka cluster with metrics, Grafana dashboards, and Cruise Control)
+     --strimzi-example   Deploy an example app demonstrating Strimzi/Kafka (produce and consume messages on a topic)
  -a, --all               Install everything
 ```
 
@@ -212,6 +214,8 @@ kubectl get ingress -A -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.me
 | **Valkey Example** | Demo app: 2 pods write timestamps and increment a shared counter every 10s (optional, `-x` flag) |
 | **MongoDB** | NoSQL document database, with Prometheus metrics, ServiceMonitor, alerts, and Grafana dashboard (optional, `-j` flag) |
 | **MongoDB Example** | Demo app: 2 pods insert documents into a shared collection every 10s (optional, `-q` flag) |
+| **Strimzi (Apache Kafka)** | Kafka operator + 3-node KRaft cluster with JMX metrics, PodMonitors, Grafana dashboards, and Cruise Control (optional, `-u` flag) |
+| **Strimzi Example** | Demo app: a producer and consumer exchanging JSON messages over a Kafka topic (optional, `--strimzi-example` flag) |
 | **Metrics Server** | Kubernetes metrics (optional, `-m` flag) |
 
 ## Cilium Metrics & Grafana Dashboards
@@ -475,3 +479,146 @@ kubectl -n mongodb-example logs -f -l app=mongodb-demo
 # Query the shared collection
 kubectl -n mongodb exec -it deployment/mongodb -- mongosh -u app -p app --authenticationDatabase app app --eval 'db.demo_events.find().sort({created_at:-1}).limit(10).pretty()'
 ```
+
+## Strimzi (Apache Kafka)
+
+[Strimzi](https://strimzi.io/) is a CNCF operator for running [Apache Kafka](https://kafka.apache.org/) on Kubernetes. It manages the full lifecycle of Kafka clusters, topics, and users through custom resources.
+
+When installed (`-u` flag), the operator and a Kafka cluster are deployed with:
+
+- **Namespace**: `kafka` (both the operator and the cluster)
+- **Cluster**: 3 KRaft nodes with combined `controller` + `broker` roles (no ZooKeeper), each with 10Gi persistent storage
+- **Listeners**: plain (`9092`) and TLS (`9093`), both internal
+- **JMX metrics**: exposed via the Prometheus JMX Exporter and scraped by PodMonitors (brokers, Cruise Control, Kafka Exporter, cluster operator, and entity operator)
+- **Cruise Control**: automated partition rebalancing
+- **Kafka Exporter**: topic and consumer-lag metrics
+- **Grafana dashboards**: "Strimzi Kafka", "Strimzi Kafka Exporter", "Strimzi Cruise Control", "Strimzi KRaft", and "Strimzi Operators" (auto-loaded via the Grafana sidecar)
+
+### Bootstrap endpoints
+
+Applications connect to Kafka through the **bootstrap service**, not individual brokers:
+
+```text
+kafka-kafka-bootstrap.kafka.svc.cluster.local:9092   # plain
+kafka-kafka-bootstrap.kafka.svc.cluster.local:9093   # TLS
+```
+
+### Inspect the cluster
+
+```bash
+# Cluster, node pool, and pods
+kubectl -n kafka get kafka,kafkanodepool,pods
+
+# List topics
+kubectl -n kafka exec -it kafka-dual-role-0 -- \
+  /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-kafka-bootstrap:9092 --list
+
+# Describe a topic
+kubectl -n kafka exec -it kafka-dual-role-0 -- \
+  /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-kafka-bootstrap:9092 \
+  --describe --topic demo-topic
+```
+
+### Creating a topic
+
+Topics are managed declaratively through the `KafkaTopic` custom resource (reconciled by the Topic Operator). This is preferred over creating topics imperatively:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: my-topic
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: 604800000   # 7 days
+    segment.bytes: 1073741824 # 1 GiB
+```
+
+```bash
+kubectl apply -f my-topic.yaml
+kubectl -n kafka wait --for=condition=Ready kafkatopic/my-topic --timeout=5m
+```
+
+### Connecting an application to a topic
+
+Any pod in the cluster can reach Kafka via the bootstrap service. Point your Kafka client at the bootstrap address and the topic name — the client discovers the individual brokers automatically.
+
+The minimum configuration a producer/consumer needs:
+
+| Setting | Value |
+|---------|-------|
+| `bootstrap.servers` | `kafka-kafka-bootstrap.kafka.svc.cluster.local:9092` |
+| `topic` | e.g. `demo-topic` |
+| `group.id` (consumers) | e.g. `my-consumer-group` |
+
+Example producer/consumer using the Kafka console tools shipped in the Strimzi Kafka image (`quay.io/strimzi/kafka`):
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-producer
+  namespace: kafka-example
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-producer
+  template:
+    metadata:
+      labels:
+        app: my-producer
+    spec:
+      containers:
+      - name: producer
+        image: quay.io/strimzi/kafka:latest-kafka-4.3.0
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            while true; do echo "hello $(date -Iseconds)"; sleep 2; done \
+              | /opt/kafka/bin/kafka-console-producer.sh \
+                  --bootstrap-server kafka-kafka-bootstrap.kafka.svc.cluster.local:9092 \
+                  --topic demo-topic
+```
+
+A consumer is the same image with:
+
+```bash
+/opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server kafka-kafka-bootstrap.kafka.svc.cluster.local:9092 \
+  --topic demo-topic \
+  --group my-consumer-group \
+  --from-beginning
+```
+
+For application code, use a native Kafka client library (e.g. `kafka-python`, `confluent-kafka`, `KafkaJS`, Sarama, or the official Java client) and set `bootstrap.servers` to the bootstrap address above.
+
+### Cruise Control
+
+Cruise Control continuously monitors the cluster and can rebalance partitions. Trigger a rebalance with a `KafkaRebalance` custom resource:
+
+```bash
+kubectl -n kafka get pods -l strimzi.io/name=kafka-cruise-control
+```
+
+### Strimzi Example App
+
+When the example is deployed (`--strimzi-example` flag), a **producer** and a **consumer** run against the `demo-topic` topic in the `kafka-example` namespace. The producer sends a JSON message every 2 seconds; the consumer reads the topic from the beginning and prints each message:
+
+```bash
+# Watch the produced messages
+kubectl -n kafka-example logs -f -l app=kafka-producer
+
+# Watch the consumed messages
+kubectl -n kafka-example logs -f -l app=kafka-consumer
+
+# Inspect the topic definition
+kubectl -n kafka get kafkatopic demo-topic -o yaml
+```
+
+This demonstrates the full flow: **KafkaTopic → producer → bootstrap service → brokers → consumer group**.
