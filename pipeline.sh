@@ -3207,6 +3207,127 @@ spec:
 EOF
     fi
 
+
+echo "Install Kafka Connect Prometheus metrics configuration..."
+
+# The official example contains both a sample KafkaConnect resource and the
+# connect-metrics ConfigMap. Apply only the ConfigMap document.
+curl -fsSL \
+  "https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/${STRIMZI_HELM_CHART_VERSION}/examples/metrics/kafka-connect-metrics.yaml" \
+  | sed -n '/^kind: ConfigMap$/,$p' \
+  | kubectl -n kafka apply -f -
+
+echo "Deploy highly available Kafka Connect..."
+
+kubectl -n kafka apply -f - <<EOF
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaConnect
+metadata:
+  name: kafka-connect
+  namespace: kafka
+  annotations:
+    # Enables declarative KafkaConnector resources.
+    strimzi.io/use-connector-resources: "true"
+  labels:
+    app.kubernetes.io/name: kafka-connect
+    app.kubernetes.io/instance: kafka-connect
+    app.kubernetes.io/part-of: kafka
+spec:
+  version: "${KAFKA_VERSION}"
+
+  # Three workers form one distributed Kafka Connect cluster.
+  replicas: 3
+
+  # Uses the existing internal plain listener from your Kafka resource.
+  bootstrapServers: kafka-kafka-bootstrap.kafka.svc.cluster.local:9092
+
+  # These properties are top-level fields in the current Strimzi CRD.
+  groupId: kafka-connect
+  configStorageTopic: kafka-connect-configs
+  offsetStorageTopic: kafka-connect-offsets
+  statusStorageTopic: kafka-connect-status
+
+  config:
+    # Protect Kafka Connect's internal state on the three-broker Kafka cluster.
+    config.storage.replication.factor: 3
+    offset.storage.replication.factor: 3
+    status.storage.replication.factor: 3
+
+    # Kafka Connect defaults, made explicit.
+    offset.storage.partitions: 25
+    status.storage.partitions: 5
+
+    key.converter: org.apache.kafka.connect.json.JsonConverter
+    value.converter: org.apache.kafka.connect.json.JsonConverter
+    key.converter.schemas.enable: false
+    value.converter.schemas.enable: false
+
+  metricsConfig:
+    type: jmxPrometheusExporter
+    valueFrom:
+      configMapKeyRef:
+        name: connect-metrics
+        key: metrics-config.yml
+
+  # Keeps the Java heap below the Kubernetes memory limit, leaving space
+  # for direct buffers, thread stacks, connector libraries, and the JVM.
+  jvmOptions:
+    "-Xms": 256m
+    "-Xmx": 512m
+    gcLoggingEnabled: false
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  template:
+    pod:
+      metadata:
+        labels:
+          app.kubernetes.io/name: kafka-connect
+          app.kubernetes.io/instance: kafka-connect
+
+      terminationGracePeriodSeconds: 60
+
+      # Never place two Connect workers on the same Kubernetes node.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: kafka-connect
+                  app.kubernetes.io/instance: kafka-connect
+              topologyKey: kubernetes.io/hostname
+
+    # Strimzi generates the policy/v1 PodDisruptionBudget from this template.
+    podDisruptionBudget:
+      maxUnavailable: 1
+EOF
+
+    echo "Wait for Kafka Connect to become ready..."
+
+    kubectl -n kafka wait \
+      --for=condition=Ready \
+      kafkaconnect/kafka-connect \
+      --timeout=10m
+
+    echo "Kafka Connect status:"
+    kubectl -n kafka get kafkaconnect/kafka-connect
+
+    echo "Kafka Connect pod placement:"
+    kubectl -n kafka get pods \
+      -l app.kubernetes.io/instance=kafka-connect \
+      -o wide
+
+    echo "Generated PodDisruptionBudget:"
+    kubectl -n kafka get poddisruptionbudget
+
+
+
     # Load the official Strimzi Grafana dashboards (they use a DS_PROMETHEUS
     # datasource variable that auto-resolves to the Prometheus datasource).
     if kubectl get deployment -n monitoring kube-prometheus-stack-grafana &>/dev/null; then
