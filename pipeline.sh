@@ -3207,15 +3207,14 @@ spec:
 EOF
     fi
 
-
     echo "Install Kafka Connect Prometheus metrics configuration..."
 
     # The official example contains both a sample KafkaConnect resource and the
     # connect-metrics ConfigMap. Apply only the ConfigMap document.
     curl -fsSL \
-      "https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/${STRIMZI_HELM_CHART_VERSION}/examples/metrics/kafka-connect-metrics.yaml" \
-      | sed -n '/^kind: ConfigMap$/,$p' \
-      | kubectl -n kafka apply -f -
+        "https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/${STRIMZI_HELM_CHART_VERSION}/examples/metrics/kafka-connect-metrics.yaml" \
+        | sed -n '/^kind: ConfigMap$/,$p' \
+        | kubectl -n kafka apply -f -
 
     echo "Deploy highly available Kafka Connect..."
 
@@ -3311,22 +3310,20 @@ EOF
     echo "Wait for Kafka Connect to become ready..."
 
     kubectl -n kafka wait \
-      --for=condition=Ready \
-      kafkaconnect/kafka-connect \
-      --timeout=10m
+        --for=condition=Ready \
+        kafkaconnect/kafka-connect \
+        --timeout=10m
 
     echo "Kafka Connect status:"
     kubectl -n kafka get kafkaconnect/kafka-connect
 
     echo "Kafka Connect pod placement:"
     kubectl -n kafka get pods \
-      -l app.kubernetes.io/instance=kafka-connect \
-      -o wide
+        -l app.kubernetes.io/instance=kafka-connect \
+        -o wide
 
     echo "Generated PodDisruptionBudget:"
     kubectl -n kafka get poddisruptionbudget
-
-
 
     # Load the official Strimzi Grafana dashboards (they use a DS_PROMETHEUS
     # datasource variable that auto-resolves to the Prometheus datasource).
