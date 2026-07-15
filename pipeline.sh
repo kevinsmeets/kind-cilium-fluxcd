@@ -2795,6 +2795,7 @@ if [[ $STRIMZI == true ]]; then
         --namespace kafka \
         --version "${STRIMZI_HELM_CHART_VERSION}" \
         --values - <<EOF
+replicas: 3
 resources:
   requests:
     memory: 256Mi
@@ -3028,6 +3029,16 @@ spec:
     limits:
       memory: 2Gi
       cpu: "1"
+  template:
+    pod:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  strimzi.io/cluster: kafka
+                  strimzi.io/pool-name: dual-role
 ---
 apiVersion: kafka.strimzi.io/v1
 kind: Kafka
@@ -3247,6 +3258,7 @@ spec:
   partitions: 3
   replicas: 3
   config:
+    min.insync.replicas: 2
     retention.ms: 604800000
     segment.bytes: 1073741824
 EOF
@@ -3277,7 +3289,9 @@ data:
       echo "produced: ${MSG}" >&2
       echo "${MSG}"
       sleep 2
-    done | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server "${BOOTSTRAP}" --topic "${TOPIC}"
+    done | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server "${BOOTSTRAP}" --topic "${TOPIC}" \
+      --command-property acks=all \
+      --command-property enable.idempotence=true
   consumer.sh: |
     #!/bin/sh
     BOOTSTRAP="${BOOTSTRAP_SERVER:-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092}"
@@ -3288,6 +3302,7 @@ data:
       --bootstrap-server "${BOOTSTRAP}" \
       --topic "${TOPIC}" \
       --group "${GROUP}" \
+      --consumer-property group.protocol=consumer \
       --from-beginning
 EOF
 
