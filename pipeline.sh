@@ -274,7 +274,6 @@ if [[ $INSTALL_CILIUM == true ]]; then
 l7Proxy: true
 endpointRoutes:
   enabled: true
-hostLegacyRouting: true
 gatewayAPI:
   enabled: true
 ingressController:
@@ -308,14 +307,21 @@ ipv4:
   enabled: true
 ipv6:
   enabled: false
+routingMode: native
+ipv4NativeRoutingCIDR: 10.244.0.0/16
+encryption:
+  enabled: true
+  type: wireguard
+  nodeEncryption: false
 bpf:
   masquerade: true
   tproxy: true
+  hostLegacyRouting: true
 ipMasqAgent:
   enabled: true
   config:
     nonMasqueradeCIDRs:
-      - 10.244.0.0/8
+      - 10.244.0.0/16
 prometheus:
   enabled: true
   serviceMonitor:
@@ -408,7 +414,6 @@ hubble:
       className: cilium
       hosts:
         - hubble-ui.k8s.local
-routingMode: native
 EOF
     cilium status --wait
     kubectl -n kube-system rollout status --watch --timeout=15m deployment/cilium-operator
