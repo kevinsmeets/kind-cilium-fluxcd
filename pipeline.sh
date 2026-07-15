@@ -3210,8 +3210,8 @@ EOF
 
     echo "Install Kafka Connect Prometheus metrics configuration..."
 
-# The official example contains both a sample KafkaConnect resource and the
-# connect-metrics ConfigMap. Apply only the ConfigMap document.
+    # The official example contains both a sample KafkaConnect resource and the
+    # connect-metrics ConfigMap. Apply only the ConfigMap document.
     curl -fsSL \
       "https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/${STRIMZI_HELM_CHART_VERSION}/examples/metrics/kafka-connect-metrics.yaml" \
       | sed -n '/^kind: ConfigMap$/,$p' \
