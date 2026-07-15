@@ -3208,18 +3208,18 @@ EOF
     fi
 
 
-echo "Install Kafka Connect Prometheus metrics configuration..."
+    echo "Install Kafka Connect Prometheus metrics configuration..."
 
 # The official example contains both a sample KafkaConnect resource and the
 # connect-metrics ConfigMap. Apply only the ConfigMap document.
-curl -fsSL \
-  "https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/${STRIMZI_HELM_CHART_VERSION}/examples/metrics/kafka-connect-metrics.yaml" \
-  | sed -n '/^kind: ConfigMap$/,$p' \
-  | kubectl -n kafka apply -f -
+    curl -fsSL \
+      "https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/${STRIMZI_HELM_CHART_VERSION}/examples/metrics/kafka-connect-metrics.yaml" \
+      | sed -n '/^kind: ConfigMap$/,$p' \
+      | kubectl -n kafka apply -f -
 
-echo "Deploy highly available Kafka Connect..."
+    echo "Deploy highly available Kafka Connect..."
 
-kubectl -n kafka apply -f - <<EOF
+    kubectl -n kafka apply -f - <<EOF
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaConnect
 metadata:
