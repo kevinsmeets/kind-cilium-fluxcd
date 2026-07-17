@@ -1,4 +1,4 @@
-FROM kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f
+FROM kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
 
 # Optional extra CA certificate. The build script always stages a file named
 # extra-ca.crt in the build context (empty if no cert is provided), so this
